@@ -461,9 +461,9 @@ fn check_reg(request: &RegistrationRequest) -> Result<()> {
     // 读取black.txt文件并将黑名单设备ID加载到HashSet中
     let blacklist_path = "black.txt";
     let blacklist_content = fs::read_to_string(blacklist_path)?;
-    let blacklist: HashSet<&str> = blacklist_content.lines().collect();
+    let blacklist: HashSet<String> = blacklist_content.lines().map(|s| s.to_string()).collect();
 
-    if blacklist.contains(&request.device_id) {
+    if blacklist.contains(&request.device_id.to_string()) {
         return Err(anyhow!("device_id is in the blacklist"));
     }
     Ok(())
