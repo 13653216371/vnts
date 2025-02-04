@@ -57,9 +57,6 @@ jobs:
           - TARGET: x86_64-unknown-linux-musl
             OS: ubuntu-latest
             FEATURES: normal,web
-          - TARGET: x86_64-pc-windows-msvc # tested on a windows machine
-            OS: windows-latest
-            FEATURES: ring-cipher,web
     runs-on: ${{ matrix.OS }}
     env:
       NAME: vnts_${{ matrix.TARGET }}
@@ -135,8 +132,6 @@ jobs:
             [target.mips-unknown-linux-musl]
             linker = "mips-linux-musl-gcc"
             rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]  
-            [target.x86_64-pc-windows-msvc]
-            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]   
             EOF
       - name: 添加编译平台
         run: rustup target add $TARGET
