@@ -1,0 +1,216 @@
+name: 编译预发布版本vnts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布prerelease的版本号'
+        required: true
+        default: '9.9.9'
+      branch:
+        description: '编译vnts的vnt-dev/vnt分支或版本号，默认主分支master'
+        required: true
+        default: 'master'
+
+env:
+  CARGO_TERM_COLOR: always
+  TZ: Asia/Shanghai
+  tag: "${{ github.event.inputs.tag }}"
+  branch: "${{ github.event.inputs.branch }}"
+jobs:
+ build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - TARGET: aarch64-unknown-linux-musl
+            OS: ubuntu-latest
+            FEATURES: normal,web
+            STRIP: aarch64-linux-musl-strip
+          - TARGET: armv7-unknown-linux-musleabihf
+            OS: ubuntu-latest
+            FEATURES: normal,web
+            STRIP: armv7l-linux-musleabihf-strip
+          - TARGET: armv7-unknown-linux-musleabi
+            OS: ubuntu-latest
+            FEATURES: normal,web
+            STRIP: armv7m-linux-musleabi-strip
+          - TARGET: arm-unknown-linux-musleabihf
+            OS: ubuntu-latest
+            FEATURES: normal,web
+            STRIP: arm-linux-musleabihf-strip
+          - TARGET: arm-unknown-linux-musleabi
+            OS: ubuntu-latest
+            FEATURES: normal,web
+            STRIP: arm-linux-musleabi-strip
+          - TARGET: mipsel-unknown-linux-musl
+            OS: ubuntu-latest
+            FEATURES: normal,web
+            STRIP: mipsel-linux-musl-strip
+          - TARGET: mips-unknown-linux-musl
+            OS: ubuntu-latest
+            FEATURES: normal
+            STRIP: mips-linux-musl-strip
+          #- TARGET: i686-unknown-linux-musl
+            #OS: ubuntu-latest
+            #FEATURES: normal,web
+          - TARGET: x86_64-unknown-linux-musl
+            OS: ubuntu-latest
+            FEATURES: normal,web
+          - TARGET: x86_64-unknown-freebsd
+            OS: ubuntu-latest
+            FEATURES: normal,web
+    runs-on: ${{ matrix.OS }}
+    env:
+      NAME: vnts_${{ matrix.TARGET }}
+      TARGET: ${{ matrix.TARGET }}
+      OS: ${{ matrix.OS }}
+      STRIP: ${{ matrix.STRIP }}
+      FEATURES: ${{ matrix.FEATURES }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: 设置编译环境
+        if: ${{ matrix.TARGET != 'x86_64-unknown-freebsd' }}
+        run: |
+            case $TARGET in 
+              mipsel-unknown-linux-musl)
+                MUSL_URI=mipsel-linux-musl-cross
+                ;;
+              aarch64-unknown-linux-musl)
+                MUSL_URI=aarch64-linux-musl-cross
+                ;;
+              armv7-unknown-linux-musleabihf)
+                MUSL_URI=armv7l-linux-musleabihf-cross
+                ;;
+              armv7-unknown-linux-musleabi)
+                MUSL_URI=armv7m-linux-musleabi-cross
+                ;;
+              arm-unknown-linux-musleabihf)
+                MUSL_URI=arm-linux-musleabihf-cross
+                ;;
+              arm-unknown-linux-musleabi)
+                MUSL_URI=arm-linux-musleabi-cross
+                ;;
+              mips-unknown-linux-musl)
+                MUSL_URI=mips-linux-musl-cross
+                ;;
+            esac
+            if [[ $TARGET =~ "x86_64-unknown-linux-musl" ]] || [[ $TARGET =~ "i686-unknown-linux-musl" ]] ; then
+              sudo apt-get update && sudo apt-get install -qq musl-tools
+            else
+              echo "MUSL_URI=${MUSL_URI}" >> $GITHUB_ENV
+              mkdir -p /opt/musl_gcc 
+              wget -q -c https://musl.cc/$MUSL_URI.tgz -P /opt/musl_gcc/
+              tar zxf /opt/musl_gcc/$MUSL_URI.tgz -C /opt/musl_gcc/
+              sudo ln -s /opt/musl_gcc/$MUSL_URI/bin/*gcc /usr/bin/
+            fi
+            if [[ $TARGET == mips-unknown-linux-musl ]] || [[ $TARGET == mipsel-unknown-linux-musl ]] ; then
+            rustup install 1.72.1
+            rustup default 1.72.1
+            fi
+            sudo timedatectl set-timezone "Asia/Shanghai"
+            cat >>~/.cargo/config <<EOF
+            [target.x86_64-unknown-linux-musl]
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.i686-unknown-linux-musl]
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"] 
+            [target.aarch64-unknown-linux-musl]
+            linker = "aarch64-linux-musl-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.armv7-unknown-linux-musleabihf]
+            linker = "armv7l-linux-musleabihf-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.armv7-unknown-linux-musleabi]
+            linker = "armv7m-linux-musleabi-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.arm-unknown-linux-musleabihf]
+            linker = "arm-linux-musleabihf-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.arm-unknown-linux-musleabi]
+            linker = "arm-linux-musleabi-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.mipsel-unknown-linux-musl]
+            linker = "mipsel-linux-musl-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+            [target.mips-unknown-linux-musl]
+            linker = "mips-linux-musl-gcc"
+            rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]  
+            EOF
+      - name: 添加编译平台
+        run: rustup target add $TARGET
+      - name: 开始编译
+        if: ${{ matrix.TARGET != 'x86_64-unknown-freebsd' }}
+        run: |
+          git clone -b ${{ env.branch }} https://github.com/13653216371/vnts /opt/vnts
+          cd /opt/vnts
+          tar -czf ./WEB_static.tar.gz static
+          #if [[ $TARGET == aarch64-unknown-linux-musl ]] || [[ $TARGET == armv7-unknown-linux-musleabi ]] || [[ $TARGET == arm-unknown-linux-musleabi ]] ; then
+          #sed -i 's|key/|/tmp/key/|g' ./src/cipher/rsa_cipher.rs
+          #sed -i 's|create_dir|create_dir_all|g' ./src/cipher/rsa_cipher.rs
+          #sed -i 's|let path = PathBuf::from("key");|let path = PathBuf::from("/tmp/key");|g' ./src/cipher/rsa_cipher.rs
+          #fi
+          #sed -i 's|= "3.2.0"|= "=3.2.0"|g' ./Cargo.toml
+          #echo "tag=$(grep -o 'version = "[^"]*' ./src/service/main_service/common.rs | sed 's/version = "//')" >> $GITHUB_ENV
+          cargo build --release --target $TARGET --features $FEATURES
+      - name: 编译FreeBSD
+        if: ${{ matrix.TARGET == 'x86_64-unknown-freebsd' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu qemu-user-static binfmt-support build-essential
+          git clone https://github.com/vnt-dev/vnts -b ${{ env.branch }} /opt/vnts
+          cd /opt/vnts
+          cargo install cross --git https://github.com/cross-rs/cross
+          sed -i 's/const CLOCK_ID: ClockId = ClockId::CLOCK_BOOTTIME;/const CLOCK_ID: ClockId = ClockId::CLOCK_MONOTONIC;/g' ./lib/boringtun/src/sleepyinstant/unix.rs
+          cross build --target $TARGET --release --features $FEATURES
+      - name: 打包压缩
+        run: |
+          mkdir -p /opt/upx
+          [[ $TARGET == aarch64-unknown-linux-musl ]] && cp -rf /opt/vnts/WEB_static.tar.gz /opt/upx/WEB_static.tar.gz
+          if [[ $TARGET != "x86_64-unknown-linux-musl" ]] && [[ $TARGET != "i686-unknown-linux-musl" ]] && [[ $TARGET != "x86_64-unknown-freebsd" ]] ; then
+          git clone https://github.com/lmq8267/cloudflared.git /opt/st
+          tar -xvf /opt/st/upx-3.95-amd64_linux.tar.xz -C /opt
+          chmod 777 /opt/upx-3.95-amd64_linux/upx
+          tar -xvf /opt/st/upx-4.1.0-amd64_linux.tar.xz -C /opt
+          chmod 777 /opt/upx-4.1.0-amd64_linux/upx
+          chmod 777 /opt/musl_gcc/${{ env.MUSL_URI }}/bin/${STRIP}
+          fi
+          mv /opt/vnts/target/${TARGET}/release/vnts /opt/upx/${NAME}
+          cd /opt/upx
+          if [[ $TARGET != "x86_64-unknown-linux-musl" ]] && [[ $TARGET != "i686-unknown-linux-musl" ]] && [[ $TARGET != "x86_64-unknown-freebsd" ]] ; then
+          /opt/musl_gcc/${{ env.MUSL_URI }}/bin/${STRIP} ${NAME}
+          if [[ $TARGET == mips-unknown-linux-musl ]] || [[ $TARGET == mipsel-unknown-linux-musl ]] ; then
+          /opt/upx-3.95-amd64_linux/upx --lzma --best ${NAME}
+          else
+          /opt/upx-4.1.0-amd64_linux/upx --lzma --best ${NAME}
+          fi
+          fi
+          echo "build_time=$(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+      - name: 发布
+        uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ secrets.c8 }}
+          body: |
+           > ### 编译时间 ：${{ env.build_time }}
+           
+           这是预发布版本，各平台的压缩版程序
+           x86_64和i386未压缩
+           
+           -musleabi：只支持软件浮点的设备
+           -musleabihf：支持硬件浮点的设备
+           
+           mips不支持web管理！
+           
+           [官方更新说明](https://github.com/vnt-dev/vnts/releases)
+           
+          #tag_name: ${{ env.tag }}
+          tag_name: ${{ env.tag }}
+          prerelease: true
+          files: |
+              /opt/upx/*
+      - 
+       name: 删除工作流
+       uses: GitRML/delete-workflow-runs@main
+       with:
+        token: ${{ secrets.c8 }}
+        retain_days: 2
+        keep_minimum_runs: 0
