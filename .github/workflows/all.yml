@@ -185,32 +185,9 @@ jobs:
           fi
           fi
           echo "build_time=$(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
-      - name: 发布
-        uses: softprops/action-gh-release@v1
+      - name: 上传
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          token: ${{ secrets.c8 }}
-          body: |
-           > ### 编译时间 ：${{ env.build_time }}
-           
-           这是预发布版本，各平台的压缩版程序
-           x86_64和i386未压缩
-           
-           -musleabi：只支持软件浮点的设备
-           -musleabihf：支持硬件浮点的设备
-           
-           mips不支持web管理！
-           
-           [官方更新说明](https://github.com/vnt-dev/vnts/releases)
-           
-          #tag_name: ${{ env.tag }}
-          tag_name: ${{ env.tag }}
-          prerelease: true
-          files: |
-              /opt/upx/*
-      - 
-       name: 删除工作流
-       uses: GitRML/delete-workflow-runs@main
-       with:
-        token: ${{ secrets.c8 }}
-        retain_days: 2
-        keep_minimum_runs: 0
+          name: ${{ env.NAME }}
+          path: /opt/upx/*
