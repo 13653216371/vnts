@@ -11,6 +11,9 @@ use std::time::Duration;
 use std::{io, result};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::Sender;
+use std::fs;
+use std::collections::HashSet;
+
 
 use crate::cipher::{Aes256GcmCipher, Finger, RsaCipher};
 use crate::core::entity::{ClientInfo, ClientStatusInfo, NetworkInfo, SimpleClientInfo};
@@ -454,6 +457,14 @@ fn check_reg(request: &RegistrationRequest) -> Result<()> {
     }
     if request.client_secret_hash.len() > 128 {
         Err(anyhow!("client_secret_hash length error"))?
+    }
+    // 读取black.txt文件并将黑名单设备ID加载到HashSet中
+    let blacklist_path = "black.txt";
+    let blacklist_content = fs::read_to_string(blacklist_path)?;
+    let blacklist: HashSet<&str> = blacklist_content.lines().collect();
+
+    if blacklist.contains(&request.device_id) {
+        return Err(anyhow!("device_id is in the blacklist"));
     }
     Ok(())
 }
